@@ -1,0 +1,92 @@
+ifeq ($(P), ARM)
+CROSS_COMPILE := arm-poky-linux-gnueabi-
+CC ?= $(CROSS_COMPILE)gcc
+STRIP := $(CROSS_COMPILE)strip
+MACRO ?= -DARM
+CFLAGS := -Wall -O2 $(HEADER_CFLAGS) $(MACRO)
+CXX ?= $(CROSS_COMPILE)g++
+HEADER_CXXFLAGS ?= -I../tinyalsa/include -I./ -I../linux-tools -I../config $(shell pkg-config --cflags gstreamer-1.0)
+CXXFLAGS := -Wall -O2 -std=c++11 $(HEADER_CXXFLAGS) $(MACRO)
+CXXLDFLAGS ?= $(shell pkg-config --libs gstreamer-1.0) -lgstvideo-1.0 -ltinyalsa -lusb-1.0 -lARMtool -L../arm-lib -lrt -pthread 
+else
+CC := gcc
+STRIP := strip
+CFLAGS ?= -Wall -O0 -g  $(HEADER_CFLAGS) $(MACRO)
+CXX := g++
+HEADER_CXXFLAGS ?= -I../linux-tools  
+CXXFLAGS ?= -Wall -O0 -g  -std=c++0x $(HEADER_CXXFLAGS) $(MACRO)
+CXXLDFLAGS ?= -lusb-1.0 -ltool -lrt -pthread 
+endif
+
+HEADER_CFLAGS ?= 
+LDFLAGS ?= 
+MACRO ?=
+
+
+CXXMACRO ?=
+
+#TARGET need add by yourself, exeName or libName.so
+TARGET ?= lib$(P)Box.so	
+#TARGET ?= $(P)boxTest
+#Compiler for generate target, CC or CXX
+TARGET_CC ?= $(CXX)
+TARGET_LDFLAGS = $(LDFLAGS) $(CXXLDFLAGS)
+#C link C++ may be need some std lib, such as libstdc++
+TARGET_LDFLAGS += 
+
+SRC_DIR := .
+SRC = $(shell find $(SRC_DIR) -maxdepth 1 -name "*.c")
+OBJS = $(SRC:.c=.o)
+CXXSRC = $(shell find $(SRC_DIR) -maxdepth 1 -name "*.cpp")
+CXXOBJS = $(CXXSRC:.cpp=.oo)
+
+$(TARGET):  $(OBJS) $(CXXOBJS)
+ifeq (,$(findstring .so,$(TARGET)))
+	$(TARGET_CC)  $(OBJS) $(CXXOBJS) $(TARGET_LDFLAGS) -o $(TARGET)
+else
+	$(TARGET_CC) -shared  $(OBJS) $(CXXOBJS) $(TARGET_LDFLAGS) -o $(TARGET)
+endif
+	$(STRIP) $(TARGET)
+ifeq ($(P), ARM)
+	cp $(TARGET) ../arm-lib
+else
+	cp $(TARGET) ../gcc-lib
+endif
+
+
+sinclude $(SRC:.c=.d)
+%.o: %.c
+ifeq (,$(findstring .so,$(TARGET)))
+	$(CC) $(CFLAGS) -o $@ -c $<
+else
+	$(CC) -fPIC $(CFLAGS) -o $@ -c $<
+endif
+
+sinclude $(CXXSRC:.cpp=.dd)
+%.oo: %.cpp
+ifeq (,$(findstring .so,$(TARGET)))
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
+else
+	$(CXX) -fPIC $(CXXFLAGS) -o $@ -c $<
+endif
+
+%.d: %.c
+	    @$(CC) -M $(CFLAGS) $< > $@.$$$$; \
+		sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+		rm -f $@.$$$$
+
+%.dd: %.cpp
+	    @$(CXX) -M $(CXXFLAGS) $< > $@.$$$$; \
+		sed 's,\($*\)\.o[ :]*,\1.oo $@ : ,g' < $@.$$$$ > $@; \
+		rm -f $@.$$$$
+
+
+.PHONY: clean
+clean:
+	rm -rf $(SRC:.c=.d) $(CXXSRC:.cpp=.dd) $(OBJS) $(CXXOBJS)
+	rm -f $(TARGET)
+	
+.PHONY: show_src
+show_src:
+	@echo $(SRC) $(CXXSRC); \
+	echo $(OBJS) $(CXXOBJS)
